@@ -1,0 +1,1 @@
+// Content script not used directly in this version.
