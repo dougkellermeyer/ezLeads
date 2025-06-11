@@ -1,68 +1,95 @@
+// popup.js
 
 document.getElementById("scrapeBtn").addEventListener("click", async () => {
-    let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        function: scrapeGoogleMapsLeads,
-    });
-    document.getElementById("status").textContent = "Scraping... check downloads";
+  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: scrapeGoogleMapsLeads,
+  });
+  document.getElementById("status").textContent = "Scraping... check console & downloads";
 });
 
 function scrapeGoogleMapsLeads() {
-    let cards = document.querySelectorAll('[role="article"]');
+  console.log("Scrape function started");
+
+  function waitFor(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function collectLeads() {
+    await waitFor(1000);
+
+    const cards = document.querySelectorAll('div[jscontroller="AtSb"]');
+    console.log(`Found ${cards.length} cards`);
+
     let leads = [];
 
-    cards.forEach(card => {
-        let name = card.querySelector('h3')?.textContent || "";
-        let address = "";
-        let phone = "";
-        let mapsUrl = "";
+    cards.forEach((card, index) => {
+      console.log(`\n--- Parsing card #${index + 1} ---`);
 
-        // Find all buttons/icons
-        let links = card.querySelectorAll('a');
+      const nameSpan = card.querySelector('span.OSrXXb, h3 span');
+      const name = nameSpan ? nameSpan.textContent.trim() : "NO NAME";
+      let phone = "";
+      let hasWebsite = false;
 
-        let hasWebsite = false;
-        let possibleWebsite = "";
+      // Check all links for phone numbers and websites
+      const links = card.querySelectorAll("a");
+      links.forEach(link => {
+        const href = link.getAttribute("href") || "";
+        const label = link.getAttribute("aria-label")?.toLowerCase() || "";
 
-        links.forEach(link => {
-            if (link.innerText.toLowerCase().includes("website") || link.getAttribute("aria-label")?.toLowerCase().includes("website")) {
-                hasWebsite = true;
-                possibleWebsite = link.href;
-            }
-
-            if (link.href.includes("/maps/place/")) {
-                mapsUrl = link.href;
-            }
-        });
-
-        // Grab address and phone if available
-        const spans = card.querySelectorAll("span");
-        spans.forEach(span => {
-            if (span.textContent.match(/\\d{3}[\\)\\-\\s]?\\d{3}[\\-\\s]?\\d{4}/)) {
-                phone = span.textContent;
-            } else if (span.textContent.length > 10 && span.textContent.includes(",")) {
-                address = span.textContent;
-            }
-        });
-
-        if (!hasWebsite) {
-            leads.push({ name, address, phone, mapsUrl });
+        if (label.includes("website") && !href.includes("tel:")) {
+          hasWebsite = true;
         }
+
+        if (!phone && href.startsWith("tel:")) {
+          phone = href.replace("tel:", "").trim();
+        }
+      });
+
+      // Backup: search visible text nodes for phone number format
+      if (!phone) {
+        const textBlocks = Array.from(card.querySelectorAll("span, div"))
+          .map(el => el.textContent.trim())
+          .filter(Boolean);
+
+        for (const text of textBlocks) {
+          const match = text.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+          if (match) {
+            phone = match[0];
+            break;
+          }
+        }
+      }
+
+      console.log("Name:", name);
+      console.log("Phone:", phone);
+      console.log("Website Present?", hasWebsite);
+
+      if (!hasWebsite && phone) {
+        console.log("✅ Adding lead (no website)");
+        leads.push({ name, phone });
+      }
     });
 
-    if (leads.length > 0) {
-        const csv = "Name,Address,Phone,MapsURL\\n" + leads.map(l => 
-            [l.name, l.address, l.phone, l.mapsUrl].map(x => `"\${x}"`).join(",")
-        ).join("\\n");
+    console.log(`\nTotal leads without website: ${leads.length}`);
 
-        const blob = new Blob([csv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "leads_no_website.csv";
-        a.click();
-        URL.revokeObjectURL(url);
+    if (leads.length > 0) {
+      const csv = "Name,Phone\n" + leads.map(l =>
+        [l.name, l.phone].map(x => `"${x.replace(/"/g, '""')}"`).join(",")
+      ).join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "leads_no_website.csv";
+      a.click();
+      URL.revokeObjectURL(url);
     } else {
-        alert("No leads without websites found.");
+      alert("No leads without websites found.");
     }
+  }
+
+  collectLeads();
 }
