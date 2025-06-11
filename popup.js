@@ -14,22 +14,46 @@ function scrapeGoogleMapsLeads() {
 
     cards.forEach(card => {
         let name = card.querySelector('h3')?.textContent || "";
-        let websiteLink = Array.from(card.querySelectorAll('a')).find(a => a.href.includes('website'));
-        let mapsLink = Array.from(card.querySelectorAll('a')).find(a => a.href.includes('/maps/place/'));
-        let website = websiteLink ? websiteLink.href : "";
-        let mapsUrl = mapsLink ? mapsLink.href : "";
-        let address = card.querySelector('[data-item-id="address"]')?.textContent || "";
-        let phone = card.querySelector('[data-tooltip="Copy phone number"]')?.textContent || "";
+        let address = "";
+        let phone = "";
+        let mapsUrl = "";
 
-        if (!website) {
+        // Find all buttons/icons
+        let links = card.querySelectorAll('a');
+
+        let hasWebsite = false;
+        let possibleWebsite = "";
+
+        links.forEach(link => {
+            if (link.innerText.toLowerCase().includes("website") || link.getAttribute("aria-label")?.toLowerCase().includes("website")) {
+                hasWebsite = true;
+                possibleWebsite = link.href;
+            }
+
+            if (link.href.includes("/maps/place/")) {
+                mapsUrl = link.href;
+            }
+        });
+
+        // Grab address and phone if available
+        const spans = card.querySelectorAll("span");
+        spans.forEach(span => {
+            if (span.textContent.match(/\\d{3}[\\)\\-\\s]?\\d{3}[\\-\\s]?\\d{4}/)) {
+                phone = span.textContent;
+            } else if (span.textContent.length > 10 && span.textContent.includes(",")) {
+                address = span.textContent;
+            }
+        });
+
+        if (!hasWebsite) {
             leads.push({ name, address, phone, mapsUrl });
         }
     });
 
     if (leads.length > 0) {
-        const csv = "Name,Address,Phone,MapsURL\n" + leads.map(l => 
+        const csv = "Name,Address,Phone,MapsURL\\n" + leads.map(l => 
             [l.name, l.address, l.phone, l.mapsUrl].map(x => `"\${x}"`).join(",")
-        ).join("\n");
+        ).join("\\n");
 
         const blob = new Blob([csv], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
